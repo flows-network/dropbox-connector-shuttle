@@ -32,7 +32,7 @@ For the purpose of this tutorial, you need to do the following things.
 
 ## Build your WasmHaiku Connector
 
-As a service, the Connector should reside to keep listening to the request coming from the application and [WasmHaaiku][w]. It should provide APIs that handle things below:
+As a service, the Connector should reside to keep listening to the request coming from the application and [WasmHaiku][w]. It should provide APIs that handle things below:
 
 * [Authorize](./AUTHORIZE.md) - Recognize the user of the application and send the user's authorized state to [WasmHaiku][w].
 * [Inbound](./INBOUND.md) - Listen to the event popped up by the application and send it to [WasmHaiku][w].

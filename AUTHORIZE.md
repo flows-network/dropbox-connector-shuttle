@@ -2,7 +2,7 @@
 
 Nowadays, the application platform often uses [OAuth 2.0](https://oauth.net/) to authorize access to a user’s data. You can also refer to the [Dropbox OAuth Guide](https://www.dropbox.com/lp/developers/reference/oauth-guide).
 
-Here we use [code flow](https://oauth.net/2/grant-types/authorization-code/) to obtain the user authorization, the step are as follows.
+Here we use [code flow][cf] to obtain the user authorization, the step are as follows.
 
 * When the user clicks `+ Authenticate Account`, WasmHaiku calls [/connect](#connect), and then [/connect](#connect) constructs a Dropbox authorization URL with your application's `client_id` and `redirect_uri`, and redirects to the Dropbox authorization page.
 * Wait for the end user to complete authorization on Dropbox authorization page, whom is then redirected back to [/auth](#auth) with an authorization code in the query string.
@@ -16,8 +16,8 @@ Here we use [code flow](https://oauth.net/2/grant-types/authorization-code/) to 
 
 * `client_id=<DROPBOX_APP_CLIENT_ID>&`
 * `redirect_uri=<SERVICE_API_PREFIX>auth&` Redirected back to [/auth](#auth) to get the tokens.
-* `response_type=code&` Verify with code flow.
-* `token_access_type=offline` Makes [/oauth2/token][o2t] returns  a short-lived __access_token__ and a long-lived __refresh_token__ that can be used to request a new short-lived access token as long as a user's approval remains valid.
+* `response_type=code&` Verify with [code flow][cf].
+* `token_access_type=offline` Makes [/oauth2/token][o2t] returns a short-lived __access_token__ and a long-lived __refresh_token__ that can be used to request a new short-lived access token as long as a user's approval remains valid.
 
 ```rust
 return (StatusCode::FOUND, [(header::LOCATION, format!(
@@ -63,6 +63,17 @@ let at = HTTP_CLIENT         // reqwest Client
 
 After we get the tokens, we returns a redirect response back to the WasmHaiku (Here we omit the step of getting the account name).
 
+For this purpose, we need to call WasmHaiku's `/api/connected` API. The query parameters are as follows:
+
+<https://wasmhaiku.com/api/connected?>
+
+* `authorId=<account_id>&` The unique user identity in WasmHaiku.
+* `authorName=<account_display_name>` Account names displayed in WasmHaiku.
+* `authorState=<access_token>` Short-lived __access_token__.
+* `authorRefresh=<refresh_token>` Long-lived __refresh_token__.
+
+Axum implement:
+
 ```rust
 return (StatusCode::FOUND, [(header::LOCATION, format!(
         "{}/api/connected?authorId={}&authorName={}&authorState={}&refreshState={}",
@@ -81,3 +92,4 @@ Congratulations, user authentication is now complete!
 TODO
 
 [o2t]: https://www.dropbox.com/developers/documentation/http/documentation#oauth2-token
+[cf]: https://oauth.net/2/grant-types/authorization-code/
