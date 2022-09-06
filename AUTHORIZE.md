@@ -16,7 +16,7 @@ Here we use [code flow][cf] to obtain the user authorization, the step are as fo
 
 * `client_id=<DROPBOX_APP_CLIENT_ID>&`
 * `redirect_uri=<SERVICE_API_PREFIX>auth&` Redirected back to [/auth](#auth) to get the tokens.
-* `response_type=code&` Verify with [code flow][cf].
+* `response_type=code&` Authorization with [code flow][cf].
 * `token_access_type=offline` Makes [/oauth2/token][o2t] returns a short-lived __access_token__ and a long-lived __refresh_token__ that can be used to request a new short-lived access token as long as a user's approval remains valid.
 
 ```rust
