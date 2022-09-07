@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use axum::{
     extract::{Json, Query, ContentLengthLimit, Multipart},
     http::StatusCode,
@@ -78,7 +80,7 @@ struct AuthBody {
 #[derive(Deserialize, Clone)]
 struct AccessToken {
     access_token: String,
-    refresh_token: String,
+    refresh_token: Option<String>,
     account_id: Option<String>,
     // team_id: String,
 }
@@ -95,14 +97,13 @@ async fn get_access_token(mode: AuthMode) -> Result<AccessToken, String> {
                 ("code", code),
                 ("grant_type", "authorization_code".to_string()),
                 ("redirect_uri", REDIRECT_URL.to_string()),
-            ]
+            ].into_iter().collect::<HashMap<&'static str, String>>()
         },
         AuthMode::Refresh(refresh_token) => {
             [
                 ("refresh_token", refresh_token),
                 ("grant_type", "refresh_token".to_string()),
-                ("redirect_uri", REDIRECT_URL.to_string()),
-            ]
+            ].into_iter().collect::<HashMap<&'static str, String>>()
         },
     };
 
@@ -149,9 +150,13 @@ async fn auth(req: Query<AuthBody>) -> impl IntoResponse {
         Err(e) => return Err((StatusCode::UNAUTHORIZED, e))
     };
 
+    let refresh_token = at.refresh_token
+        .as_ref()
+        .ok_or((StatusCode::INTERNAL_SERVER_ERROR, "Missing refresh_token".to_string()))?;
+
     let id = at.account_id
         .as_ref()
-        .ok_or((StatusCode::BAD_REQUEST, "Missing refresh_token".to_string()))?;
+        .ok_or((StatusCode::INTERNAL_SERVER_ERROR, "Missing account_id".to_string()))?;
 
     let account = get_account(&at).await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR,
@@ -163,7 +168,7 @@ async fn auth(req: Query<AuthBody>) -> impl IntoResponse {
         id,
         format!("{} ({})", account.name.display_name, account.email),
         encrypt(&at.access_token),
-        encrypt(&at.refresh_token)
+        encrypt(refresh_token)
     ))]))
 }
 
@@ -178,7 +183,8 @@ async fn refresh(req: Json<RefreshBody>) -> impl IntoResponse {
             "access_state": encrypt(&at.access_token),
             "refresh_state": req.refresh_state
         }))))
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR,
+            format!("get_access_token: {}", e)))
 }
 
 async fn upload(
