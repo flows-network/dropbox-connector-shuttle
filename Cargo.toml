@@ -6,7 +6,7 @@ edition = "2021"
 [lib]
 
 [dependencies]
-shuttle-service = { version = "0.5.0", features = ["web-axum"] }
+shuttle-service = { version = "0.5.1", features = ["web-axum", "mongodb-integration"] }
 axum = { version = "0.5.15", features = ["multipart"] }
 sync_wrapper = "0.1.1"
 serde = { version = "1.0.144", features = ["derive"] }
@@ -19,3 +19,4 @@ hex = "0.4.0"
 urlencoding = "2.1.0"
 base64 = "0.13.0"
 reqwest = { version = "0.11", features = ["json", "multipart"] }
+mongodb = "2.3.0"

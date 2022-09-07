@@ -44,6 +44,6 @@ Every Connector should implement the Authorize API, and one or both of the Inbou
 You can find the full code for this tutorial [here](https://github.com/second-state/dropbox-connector-shuttle).
 
 [d]: https://www.dropbox.com
-[w]: https://[WasmHaiku][w].com
+[w]: https://wasmhaiku.com
 [sh]: https://shuttle.rs
 [sl]: https://slack.com

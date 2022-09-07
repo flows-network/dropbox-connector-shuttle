@@ -1,18 +1,19 @@
 use std::collections::HashMap;
 
 use axum::{
-    extract::{Json, Query, ContentLengthLimit, Multipart},
+    extract::{ContentLengthLimit, Json, Multipart, Query},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post, put},
-    Router,
+    Extension, Router,
 };
 use lazy_static::lazy_static;
+use mongodb::{bson::doc, Collection, Database};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use reqwest::{header, Client};
 use rsa::{PaddingScheme, PublicKey, RsaPrivateKey, RsaPublicKey};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sync_wrapper::SyncWrapper;
 
@@ -26,6 +27,9 @@ const SERVICE_API_PREFIX: &'static str = "https://dropbox-connector-shuttle.shut
 // You can find your app key and secret in the Dropbox App Console
 const DROPBOX_APP_CLIENT_ID: &'static str = "<APP_KEY>";
 const DROPBOX_APP_CLIENT_SECRET: &'static str = "<APP_SECRET>";
+
+// The access token for WasmHaiku, which you can find it when you creating a connector
+const HAIKU_AUTH_TOKEN: &'static str = "<AUTH_TOKEN>";
 
 // 32 bytes random string, but it must be CONSTANT otherwise it will NOT be able to decrypt the previously encrypted token
 const RSA_RAND_SEED: [u8; 32] = *b"wWud6hFm7mcCj$^2eeffv2d@2aeLYNUn";
@@ -92,19 +96,20 @@ enum AuthMode {
 
 async fn get_access_token(mode: AuthMode) -> Result<AccessToken, String> {
     let params = match mode {
-        AuthMode::Authorization(code) => {
-            [
-                ("code", code),
-                ("grant_type", "authorization_code".to_string()),
-                ("redirect_uri", REDIRECT_URL.to_string()),
-            ].into_iter().collect::<HashMap<&'static str, String>>()
-        },
-        AuthMode::Refresh(refresh_token) => {
-            [
-                ("refresh_token", refresh_token),
-                ("grant_type", "refresh_token".to_string()),
-            ].into_iter().collect::<HashMap<&'static str, String>>()
-        },
+        AuthMode::Authorization(code) => [
+            ("code", code),
+            ("grant_type", "authorization_code".to_string()),
+            ("redirect_uri", REDIRECT_URL.to_string()),
+        ]
+        .into_iter()
+        .collect::<HashMap<&'static str, String>>(),
+
+        AuthMode::Refresh(refresh_token) => [
+            ("refresh_token", refresh_token),
+            ("grant_type", "refresh_token".to_string()),
+        ]
+        .into_iter()
+        .collect::<HashMap<&'static str, String>>(),
     };
 
     HTTP_CLIENT
@@ -128,7 +133,7 @@ struct Name {
 #[derive(Deserialize)]
 struct Account {
     email: String,
-    name: Name
+    name: Name,
 }
 
 async fn get_account(at: &AccessToken) -> Result<Account, String> {
@@ -145,9 +150,9 @@ async fn get_account(at: &AccessToken) -> Result<Account, String> {
 }
 
 async fn auth(req: Query<AuthBody>) -> impl IntoResponse {
-    let at = match get_access_token(AuthMode::Authorization(req.code.clone())).await{
+    let at = match get_access_token(AuthMode::Authorization(req.code.clone())).await {
         Ok(at) => at,
-        Err(e) => return Err((StatusCode::UNAUTHORIZED, e))
+        Err(e) => return Err((StatusCode::UNAUTHORIZED, e)),
     };
 
     let refresh_token = at.refresh_token
@@ -158,7 +163,8 @@ async fn auth(req: Query<AuthBody>) -> impl IntoResponse {
         .as_ref()
         .ok_or((StatusCode::INTERNAL_SERVER_ERROR, "Missing account_id".to_string()))?;
 
-    let account = get_account(&at).await
+    let account = get_account(&at)
+        .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR,
             format!("get_account failed: {}", e)))?;
 
@@ -174,11 +180,12 @@ async fn auth(req: Query<AuthBody>) -> impl IntoResponse {
 
 #[derive(Deserialize)]
 struct RefreshBody {
-    refresh_state: String
+    refresh_state: String,
 }
 
 async fn refresh(req: Json<RefreshBody>) -> impl IntoResponse {
-    get_access_token(AuthMode::Refresh(decrypt(&req.refresh_state))).await
+    get_access_token(AuthMode::Refresh(decrypt(&req.refresh_state)))
+        .await
         .map(|at| (StatusCode::OK, Json(json!({
             "access_state": encrypt(&at.access_token),
             "refresh_state": req.refresh_state
@@ -190,7 +197,7 @@ async fn refresh(req: Json<RefreshBody>) -> impl IntoResponse {
 async fn upload(
     ContentLengthLimit(mut multipart): ContentLengthLimit<Multipart, { 150 * 1024 * 1024 }>,
 ) -> impl IntoResponse {
-    let mut access_token = None; 
+    let mut access_token = None;
     let mut file = Vec::new();
     let mut file_name = None;
 
@@ -204,14 +211,18 @@ async fn upload(
                         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
                         .into(),
                 );
-            },
+            }
             "text" => {
-                file_name = Some(String::from_utf8(field
-                    .bytes()
-                    .await
-                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
-                    .to_vec())
-                    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?);
+                file_name = Some(
+                    String::from_utf8(
+                        field
+                            .bytes()
+                            .await
+                            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
+                            .to_vec(),
+                    )
+                    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?,
+                );
             }
             "state" => {
                 access_token = Some(decrypt(
@@ -221,7 +232,7 @@ async fn upload(
                         .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?,
                 ));
             }
-            _ => {},
+            _ => {}
         }
     }
 
@@ -248,11 +259,14 @@ async fn upload_file_to_dropbox(
         .post("https://content.dropboxapi.com/2/files/upload")
         .bearer_auth(access_token)
         .header(header::CONTENT_TYPE, "application/octet-stream")
-        .header("Dropbox-API-Arg",
+        .header(
+            "Dropbox-API-Arg",
             json!({
                 "autorename": true,
                 "path": file_name,
-            }).to_string())
+            })
+            .to_string(),
+        )
         .body(file)
         .send()
         .await
@@ -260,7 +274,10 @@ async fn upload_file_to_dropbox(
 
     match response.status().is_success() {
         true => Ok(()),
-        false => Err(format!("Upload failed: {:?}", response.bytes().await.unwrap_or_default())),
+        false => Err(format!(
+            "Upload failed: {:?}",
+            response.bytes().await.unwrap_or_default()
+        )),
     }
 }
 
@@ -275,7 +292,7 @@ async fn webhook_challenge(req: Query<ChallengeBody>) -> impl IntoResponse {
             ("Content-Type", "text/plain"),
             ("X-Content-Type-Options", "nosniff"),
         ],
-        req.challenge.clone()
+        req.challenge.clone(),
     )
 }
 
@@ -286,23 +303,197 @@ struct Accounts {
 
 #[derive(Deserialize)]
 struct Notification {
-    list_folder: Accounts
+    list_folder: Accounts,
 }
 
-async fn capture_event(Json(req): Json<Notification>) -> impl IntoResponse {
-    let accounts = req.list_folder.accounts
-        .into_iter()
-        .map(|a| a.split_once(":").unwrap_or_default().1.to_string())
-        .collect();
-
-    capture_event_inner(accounts).await
+async fn capture_event(
+    Json(req): Json<Notification>,
+    Extension(db): Extension<Collection<UserData>>,
+) -> impl IntoResponse {
+    capture_event_inner(req.list_folder.accounts, db)
+        .await
         .unwrap_or_else(|e| println!("capture_event error: {}", e));
 
     StatusCode::OK
 }
 
-async fn capture_event_inner(_accounts: Vec<String>) -> Result<(), String> {
-    todo!();
+#[derive(Deserialize)]
+struct FileMetadata {
+    #[serde(rename = ".tag")]
+    tag: String,
+    path_lower: String,
+}
+
+#[derive(Deserialize)]
+struct Folders {
+    cursor: String,
+    entries: Vec<FileMetadata>,
+    has_more: bool
+}
+
+async fn get_folders(access_token: &String, cursor: &mut String) -> Result<Vec<FileMetadata>, String> {
+    let mut entries = Vec::new();
+
+    loop {
+        let mut folders = HTTP_CLIENT
+        .post("https://api.dropboxapi.com/2/files/list_folder/continue")
+        .bearer_auth(&access_token)
+        .json(&json!({
+            "cursor": cursor,
+        }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+    
+        .json::<Folders>()
+        .await
+        .map_err(|e| e.to_string())?;
+
+        entries.append(&mut folders.entries);
+        *cursor = folders.cursor;
+
+        if !folders.has_more {
+            break Ok(entries);
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct Cursor {
+    cursor: String,
+}
+
+async fn get_latest_cursor(access_token: String) -> Result<String, String> {
+    HTTP_CLIENT
+        .post("https://api.dropboxapi.com/2/files/list_folder/get_latest_cursor")
+        .bearer_auth(access_token)
+        .json(&json!({
+            "include_deleted": false,
+            "include_has_explicit_shared_members": true,
+            "include_mounted_folders": true,
+            "include_non_downloadable_files": false,
+            "path": "",
+            "recursive": true
+        }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+
+        .json::<Cursor>()
+        .await
+        .map(|c| c.cursor)
+        .map_err(|e| e.to_string())
+}
+
+#[derive(Deserialize)]
+struct SharedLink {
+    url: String,
+}
+
+async fn create_shared_link(access_token: &String, path: &String) -> Result<String, String> {
+    HTTP_CLIENT
+        .post("https://api.dropboxapi.com/2/sharing/create_shared_link_with_settings")
+        .bearer_auth(&access_token)
+        .json(&json!({
+            "path": path,
+            "settings": {
+                "access": "viewer",
+                "allow_download": true,
+                "audience": "public"
+            }
+        }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+    
+        .json::<SharedLink>()
+        .await
+        .map(|s| s.url)
+        .map_err(|e| e.to_string())
+}
+
+async fn get_access_token_from_haiku(author_id: &String) -> Result<String, String> {
+    HTTP_CLIENT
+        .post(format!("{}/api/_funcs/_author_state", &*HAIKU_API_PREFIX))
+        .header(header::AUTHORIZATION, HAIKU_AUTH_TOKEN)
+        .json(&json!({ "author": author_id }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+
+        .text()
+        .await
+        .map(|at| decrypt(at))
+        .map_err(|e| e.to_string())
+}
+
+async fn post_event_to_haiku(
+    user: &String,
+    text: &String,
+    triggers: HashMap<String, String>
+) -> Result<(), String> {
+    HTTP_CLIENT
+        .post(format!("{}/api/_funcs/_post", &*HAIKU_API_PREFIX))
+        .header(header::AUTHORIZATION, &*HAIKU_AUTH_TOKEN)
+        .json(&json!({
+            "user": user,
+            "text": text,
+            "triggers": triggers,
+        }))
+        .send()
+        .await
+        .map_err(|e| e.to_string())
+        .and_then(|r| r.status().is_success().then_some(())
+            .ok_or(format!("Failed to post event to haiku: {:?}", r)))
+}
+
+async fn capture_event_inner(
+    accounts: Vec<String>,
+    db: Collection<UserData>,
+) -> Result<(), String> {
+    for account in accounts {
+        if let Some(mut userdata) = db
+            .find_one(doc!{ "account_id": &account }, None)
+            .await
+            .map_err(|e| e.to_string())?
+        {
+            let access_token = get_access_token_from_haiku(&account).await?;
+            let entries = get_folders(
+                &access_token,
+                &mut userdata.cursor
+            )
+            .await?;
+
+            db.update_one(
+                doc!{ "account_id": &account },
+                doc!{ "$set": { "cursor": &userdata.cursor } },
+                None
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+
+            for entry in entries {
+                if !entry.tag.eq("file") {
+                    continue;
+                }
+
+                post_event_to_haiku(
+                    &account,
+                    &create_shared_link(&access_token, &entry.path_lower)
+                        .await
+                        .map_err(|e| format!("create_shared_link: {}", e))?,
+                    [("event".to_string(), entry.tag)]
+                        .into_iter()
+                        .collect()
+                )
+                .await?;
+            }
+        } else {
+            println!("Unregistered account: {}", account);
+        }
+    }
+
+    Ok(())
 }
 
 async fn actions() -> impl IntoResponse {
@@ -318,21 +509,54 @@ async fn actions() -> impl IntoResponse {
     Json(actions)
 }
 
-async fn events() -> impl IntoResponse {
+#[derive(Deserialize)]
+struct HaikuRequest {
+    user: String,
+    state: String,
+}
+
+async fn events(
+    req: Json<HaikuRequest>,
+    Extension(db): Extension<Collection<UserData>>,
+) -> impl IntoResponse {
+    let cursor = match get_latest_cursor(decrypt(&req.state)).await {
+        Ok(c) => c,
+        Err(e) => return Err((StatusCode::INTERNAL_SERVER_ERROR,
+            format!("get_latest_cursor: {}", e))),
+    };
+    
+    db.insert_one(
+        UserData {
+            account_id: req.user.clone(),
+            cursor
+        },
+        None
+    )
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
     let events = serde_json::json!({
         "list": [
             {
                 "field": "Received a file",
-                "value": "file_uploaded",
+                "value": "file",
                 "desc": "This connector is triggered when a new file is uploaded to the connected Dropbox. It corresponds to the upload event in Dropbox API."
             }
         ]
     });
-    Json(events)
+    Ok(Json(events))
+}
+
+#[derive(Serialize, Deserialize)]
+struct UserData {
+    account_id: String,
+    cursor: String,
 }
 
 #[shuttle_service::main]
-async fn axum() -> shuttle_service::ShuttleAxum {
+async fn axum(#[shared::MongoDb] db: Database) -> shuttle_service::ShuttleAxum {
+    let db = db.collection::<UserData>("user_data");
+
     let router = Router::new()
         .route("/connect", get(connect))
         .route("/auth", get(auth))
@@ -340,7 +564,8 @@ async fn axum() -> shuttle_service::ShuttleAxum {
         .route("/post", put(upload))
         .route("/actions", post(actions))
         .route("/events", post(events))
-        .route("/webhook", get(webhook_challenge).post(capture_event));
+        .route("/webhook", get(webhook_challenge).post(capture_event))
+        .layer(Extension(db));
 
     Ok(SyncWrapper::new(router))
 }
