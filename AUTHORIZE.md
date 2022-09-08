@@ -1,7 +1,6 @@
 # Authorize
 
-This application platform uses [OAuth 2.0](https://oauth.net/) to authorize access to a user’s data. You can 
-also refer to the [Dropbox OAuth Guide](https://www.dropbox.com/lp/developers/reference/oauth-guide).
+This application platform uses [OAuth 2.0](https://oauth.net/) to authorize access to a user’s data. You can also refer to the [Dropbox OAuth Guide](https://www.dropbox.com/lp/developers/reference/oauth-guide).
 
 Here we use [code flow][cf] to obtain the user authorization, as shown in the following steps.
 
@@ -31,8 +30,7 @@ return (StatusCode::FOUND, [(header::LOCATION, format!(
 
 ## /auth
 
-When the user completes authentication, the [/auth](#auth) will be called with the authorization code. The code to 
-call [/oauth2/token][o2t] is as following (The implementation shown here has been simplified for clarity):
+When the user completes authentication, the [/auth](#auth) will be called with the authorization code. The code to call [/oauth2/token][o2t] is as following (The implementation shown here has been simplified for clarity):
 
 ```rust
 #[derive(Deserialize, Clone)]
@@ -63,8 +61,7 @@ let at = HTTP_CLIENT         // reqwest Client
     .unwrap();
 ```
 
-After we get the tokens, we return a redirect response back to the WasmHaiku (The steps to get the account name is 
-omited here).
+After we get the tokens, we return a redirect response back to the WasmHaiku (The steps to get the account name is omited here).
 
 For this purpose, we need to call WasmHaiku's `/api/connected` API. The query parameters are as follows:
 

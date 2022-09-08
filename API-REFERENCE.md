@@ -9,11 +9,23 @@
 | refresh_state | string | &cross; | The encrypted authorized refresh token (Appears when [/refresh](./AUTHORIZE.md#refresh) is called). |
 | text | string | &cross; | The string returned by the flow function (Appears when [/post](./OUTBOUND.md#post) is called with the `POST` method). |
 | file | binary | &cross; | The file returned by the flow function (Appears when [/post](./OUTBOUND.md#post) is called with the `PUT` method). |
-| forwards | [JSON](#forward-route-items) | &cross; | Multiple routes with user-selected items. |
+| forwards | [JSON](#forward-route) | &cross; | Multiple forward routes with user-selected items (Appears when [/post](./OUTBOUND.md#post) is called). |
+| triggers | [JSON](#trigger-route) | &cross; | Multiple trigger routes to use when posting events to WasmHaiku. |
 
 ### Routes
 
-#### Forward route items
+### Trigger route
+
+Multiple trigger routes to use when posting events to WasmHaiku.
+
+```json
+{
+    "<first-route>": "value-1", // The value of an item in the first-route
+    "<second-route>": "value-2" // The value of an item in the second-route
+}
+```
+
+#### Forward route
 
 Multiple routes with user-selected items.
 

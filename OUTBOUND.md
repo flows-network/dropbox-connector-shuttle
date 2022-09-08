@@ -1,22 +1,16 @@
 # Outbound
 
-Acting as outbound, the Connector provides an API, which is usually  [/post](#post), for transferring flow data coming 
-from 
-WasmHaiku to the application.
+Acting as outbound, the Connector provides an API, which is usually [/post](#post), for transferring flow data coming from WasmHaiku to the application.
 
-After authorization, WasmHaiku will get the list of items in the routes, which is `action` route here, and WasmHaiku 
-will call [/actions](#actions) to be used for the outbound, which specifies the outbound parameters (eg. outbound 
-target 
-channel, outbound message type etc.).
+After authorization, WasmHaiku will get the list of items in the `forward routes`, which is `action` here, and WasmHaiku will call [/actions](#actions) to be used for the outbound, which specifies the outbound parameters (eg. outbound target channel, outbound message type etc.).
 
 When the flow function executes successfully, WasmHaiku will send a request to [/post](#post), and then [/post](#post) transform the data and send it to the application.
 
 ## /actions
 
-Dropbox outbound has only one route `action` and it has only one item `To upload a file`. When the user sets up the outbound and selects the `action`, WasmHaiku uses the `POST` method to send a request to [/actions](#actions) with [WasmHaiku request parameters](./API-REFERENCE.md#wasmhaiku-request-parameters) in JSON format, but here we omit these parameters.
+Dropbox outbound has only one `forward route` `action` and it has only one item `To upload a file`. When the user sets up the outbound and selects the `action`, WasmHaiku uses the `POST` method to send a request to [/actions](#actions) with [WasmHaiku request parameters](./API-REFERENCE.md#wasmhaiku-request-parameters) in JSON format, but here we omit these parameters.
 
-After receiving the request, we need to return a [list](./API-REFERENCE.md#route-item-list) of `action`'s routing 
-items. Axum implementation is as follows:
+After receiving the request, we need to return a [list](./API-REFERENCE.md#route-item-list) of `action`'s routing items. Axum implementation is as follows:
 
 ```rust
 async fn actions() -> impl IntoResponse {
