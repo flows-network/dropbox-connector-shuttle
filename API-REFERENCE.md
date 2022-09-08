@@ -4,12 +4,12 @@
 
 | Name | Type | Required | Description |
 | ---- | ---- | -------- | ----------- |
-| user | string | - [x] | The unique user identity in WasmHaiku. |
-| state | string | - [x] | The encrypted authorized access token. |
-| refresh_state | string | - [] | The encrypted authorized refresh token (Appears when [/refresh](./AUTHORIZE.md#refresh) is called). |
-| text | string | - [] | The string returned by the flow function (Appears when [/post](./OUTBOUND.md#post) is called with the `POST` method). |
-| file | binary | - [] | The file returned by the flow function (Appears when [/post](./OUTBOUND.md#post) is called with the `PUT` method). |
-| forwards | [JSON](#forward-route-items) | - [] | Multiple routes with user-selected items. |
+| user | string | &check; | The unique user identity in WasmHaiku. |
+| state | string | &check; | The encrypted authorized access token. |
+| refresh_state | string | &cross; | The encrypted authorized refresh token (Appears when [/refresh](./AUTHORIZE.md#refresh) is called). |
+| text | string | &cross; | The string returned by the flow function (Appears when [/post](./OUTBOUND.md#post) is called with the `POST` method). |
+| file | binary | &cross; | The file returned by the flow function (Appears when [/post](./OUTBOUND.md#post) is called with the `PUT` method). |
+| forwards | [JSON](#forward-route-items) | &cross; | Multiple routes with user-selected items. |
 
 ### Routes
 
