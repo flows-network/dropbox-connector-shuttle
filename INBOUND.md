@@ -1,14 +1,18 @@
 # Inbound
 
-Acting as inbound, the Connector should be responsible for transferring event data coming from the application to WasmHaiku. It needs to provide an API, which usually is [/webhook](#webhook), for the application to report events. You can also refer to the [Dropbox Webhooks Tutorial](https://www.dropbox.com/developers/reference/webhooks).
+Acting as inbound, the Connector is responsible for transferring event data coming from the application to WasmHaiku. 
+It needs to provide an API, which usually is [/webhook](#webhook), for the application to report events. You can also refer to the [Dropbox Webhooks Tutorial](https://www.dropbox.com/developers/reference/webhooks).
 
-After authorization, WasmHaiku will get the list of items in the `trigger routes`, which is `event` here, and WasmHaiku will call [/events](#events) to be used for the inbound, which specifies the events that WasmHaiku triggers the `flow function` (eg. interested channel etc.).
+After authorization, WasmHaiku will get the list of items in the `trigger routes`, which is `event` here, and 
+WasmHaiku will call [/events](#events) to be used for the inbound, specifying the events upon which WasmHaiku 
+will trigger the `flow function` (eg. interested channel etc.).
 
-Before Dropbox begin to report events by sending HTTP requsets to [/webhook](#events-capture-post) using the `POST` method, it needs to confirm that Dropbox is communicating with the right service using a [verification request](#verification-request-get) with the `GET` method.
+Before Dropbox begins to report events by sending HTTP requests to [/webhook](#events-capture-post) using the `POST` 
+method, it needs to confirm that Dropbox is communicating with the right service using a [verification request](#verification-request-get) with the `GET` method.
 
 ## /events
 
-Because Dropbox requires a cursor to access the changes, we not only need to return a list of `trigger route` items, but also need to get the user's latest cursor and store it in to the database provided by shuttle.rs.
+Because Dropbox requires a cursor to access the changes, we not only need to return a list of `trigger route` items, but also need to get the user's latest cursor and store it in the database provided by shuttle.rs.
 
 ```rust
 async fn events(
@@ -61,7 +65,9 @@ async fn webhook_challenge(
 
 ### Events Capture (POST)
 
-When there's a change in any of the account connected to your connector, Dropbox uses the `POST` method to send a request to [/webhook](#webhook) with [notification body](https://www.dropbox.com/developers/reference/webhooks#documentation) which including changed accounts.
+When there's a change in any of the accounts linked to your connector, Dropbox uses the `POST` method to send a 
+request to [/webhook](#webhook) with [notification body](https://www.dropbox.
+com/developers/reference/webhooks#documentation) which includes changed accounts.
 
 After receiving the notification, we need to query the cursor in database with the `account_id`, then use the cursor to access the changes and finally post the event to WasmHaiku.
 
