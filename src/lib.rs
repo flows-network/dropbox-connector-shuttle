@@ -19,7 +19,7 @@ use sync_wrapper::SyncWrapper;
 
 const RSA_BITS: usize = 2048;
 
-const HAIKU_API_PREFIX: &'static str = "https://wasmhaiku.com";
+const HAIKU_API_PREFIX: &'static str = "https://flows.network";
 
 // If you deployed your connector, SERVICE_API_PREFIX should be set to https://<PROJECT_NAME>.shuttleapp.rs
 const SERVICE_API_PREFIX: &'static str = "https://dropbox-connector-shuttle.shuttleapp.rs";
@@ -194,7 +194,23 @@ async fn refresh(req: Json<RefreshBody>) -> impl IntoResponse {
             format!("get_access_token: {}", e)))
 }
 
-async fn upload(
+async fn upload_url(req: Json<HaikuRequest>) -> impl IntoResponse {
+    let response = HTTP_CLIENT
+        .post("https://api.dropboxapi.com/2/files/save_url")
+        .bearer_auth(decrypt(&req.state))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(req.text.clone().ok_or((StatusCode::BAD_REQUEST, "Missing text".to_string()))?)
+        .send()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    match response.status().is_success() {
+        true => Ok(StatusCode::OK),
+        false => Err((StatusCode::BAD_REQUEST, response.text().await.unwrap_or_default())),
+    }
+}
+
+async fn upload_raw(
     ContentLengthLimit(mut multipart): ContentLengthLimit<Multipart, { 150 * 1024 * 1024 }>,
 ) -> impl IntoResponse {
     let mut access_token = None;
@@ -275,8 +291,8 @@ async fn upload_file_to_dropbox(
     match response.status().is_success() {
         true => Ok(()),
         false => Err(format!(
-            "Upload failed: {:?}",
-            response.bytes().await.unwrap_or_default()
+            "Upload failed: {}",
+            response.text().await.unwrap_or_default()
         )),
     }
 }
@@ -513,6 +529,7 @@ async fn actions() -> impl IntoResponse {
 struct HaikuRequest {
     user: String,
     state: String,
+    text: Option<String>,
 }
 
 async fn events(
@@ -561,10 +578,11 @@ async fn axum(#[shared::MongoDb] db: Database) -> shuttle_service::ShuttleAxum {
         .route("/connect", get(connect))
         .route("/auth", get(auth))
         .route("/refresh", post(refresh))
-        .route("/post", put(upload))
+        .route("/post", put(upload_raw).post(upload_url))
         .route("/actions", post(actions))
         .route("/events", post(events))
-        .route("/webhook", get(webhook_challenge).post(capture_event))
+        .route("/webhook", get(webhook_challenge)
+            .post(capture_event))
         .layer(Extension(db));
 
     Ok(SyncWrapper::new(router))
