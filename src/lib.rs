@@ -19,17 +19,17 @@ use sync_wrapper::SyncWrapper;
 
 const RSA_BITS: usize = 2048;
 
-const HAIKU_API_PREFIX: &'static str = "https://wasmhaiku.com";
+const HAIKU_API_PREFIX: &'static str = "https://flows.network";
 
 // If you deployed your connector, SERVICE_API_PREFIX should be set to https://<PROJECT_NAME>.shuttleapp.rs
 const SERVICE_API_PREFIX: &'static str = "https://dropbox-connector-shuttle.shuttleapp.rs";
 
 // You can find your app key and secret in the Dropbox App Console
-const DROPBOX_APP_CLIENT_ID: &'static str = "zjw7qvenwttf5zf";
-const DROPBOX_APP_CLIENT_SECRET: &'static str = "a27y9ftwanwsg10";
+const DROPBOX_APP_CLIENT_ID: &'static str = "<APP_KEY>";
+const DROPBOX_APP_CLIENT_SECRET: &'static str = "<APP_SECRET>";
 
 // The access token for WasmHaiku, which you can find it when you creating a connector
-const HAIKU_AUTH_TOKEN: &'static str = "MDQ6VXNlcjM5MTk2MzAy";
+const HAIKU_AUTH_TOKEN: &'static str = "<AUTH_TOKEN>";
 
 // 32 bytes random string, but it must be CONSTANT otherwise it will NOT be able to decrypt the previously encrypted token
 const RSA_RAND_SEED: [u8; 32] = *b"wWud6hFm7mcCj$^2eeffv2d@2aeLYNUn";
@@ -194,7 +194,23 @@ async fn refresh(req: Json<RefreshBody>) -> impl IntoResponse {
             format!("get_access_token: {}", e)))
 }
 
-async fn upload(
+async fn upload_url(req: Json<HaikuRequest>) -> impl IntoResponse {
+    let response = HTTP_CLIENT
+        .post("https://api.dropboxapi.com/2/files/save_url")
+        .bearer_auth(decrypt(&req.state))
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(req.text.clone().ok_or((StatusCode::BAD_REQUEST, "Missing text".to_string()))?)
+        .send()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    match response.status().is_success() {
+        true => Ok(StatusCode::OK),
+        false => Err((StatusCode::BAD_REQUEST, response.text().await.unwrap_or_default())),
+    }
+}
+
+async fn upload_raw(
     ContentLengthLimit(mut multipart): ContentLengthLimit<Multipart, { 150 * 1024 * 1024 }>,
 ) -> impl IntoResponse {
     let mut access_token = None;
@@ -275,8 +291,8 @@ async fn upload_file_to_dropbox(
     match response.status().is_success() {
         true => Ok(()),
         false => Err(format!(
-            "Upload failed: {:?}",
-            response.bytes().await.unwrap_or_default()
+            "Upload failed: {}",
+            response.text().await.unwrap_or_default()
         )),
     }
 }
@@ -344,7 +360,7 @@ async fn get_folders(access_token: &String, cursor: &mut String) -> Result<Vec<F
         .send()
         .await
         .map_err(|e| e.to_string())?
-
+    
         .json::<Folders>()
         .await
         .map_err(|e| e.to_string())?;
@@ -405,7 +421,7 @@ async fn create_shared_link(access_token: &String, path: &String) -> Result<Stri
         .send()
         .await
         .map_err(|e| e.to_string())?
-
+    
         .json::<SharedLink>()
         .await
         .map(|s| s.url)
@@ -513,6 +529,7 @@ async fn actions() -> impl IntoResponse {
 struct HaikuRequest {
     user: String,
     state: String,
+    text: Option<String>,
 }
 
 async fn events(
@@ -524,7 +541,7 @@ async fn events(
         Err(e) => return Err((StatusCode::INTERNAL_SERVER_ERROR,
             format!("get_latest_cursor: {}", e))),
     };
-
+    
     db.insert_one(
         UserData {
             account_id: req.user.clone(),
@@ -561,10 +578,11 @@ async fn axum(#[shared::MongoDb] db: Database) -> shuttle_service::ShuttleAxum {
         .route("/connect", get(connect))
         .route("/auth", get(auth))
         .route("/refresh", post(refresh))
-        .route("/post", put(upload))
+        .route("/post", put(upload_raw).post(upload_url))
         .route("/actions", post(actions))
         .route("/events", post(events))
-        .route("/webhook", get(webhook_challenge).post(capture_event))
+        .route("/webhook", get(webhook_challenge)
+            .post(capture_event))
         .layer(Extension(db));
 
     Ok(SyncWrapper::new(router))
